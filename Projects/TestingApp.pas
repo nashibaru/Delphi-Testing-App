@@ -1,0 +1,305 @@
+unit TestingApp;
+
+interface
+
+uses
+  AddNewTest, IniFiles, CommCtrl,
+  Winapi.Windows, Winapi.Messages, Winapi.ShellAPI,
+  System.SysUtils, System.Variants, System.Classes,
+  Vcl.Graphics, Vcl.Controls, Vcl.Forms, Vcl.Dialogs, Vcl.StdCtrls, Vcl.Grids, Vcl.ComCtrls;
+
+type
+  TMainScreen = class(TForm)
+    NewTest: TButton;
+    OpenSciTE: TButton;
+    OpenWinInfo: TButton;
+    ListView1: TListView;
+    RunTest: TButton;
+    EditTest: TButton;
+    DeleteTest: TButton;
+    OpenInEditor: TButton;
+    procedure OpenSciTEClick(Sender: TObject);
+    procedure OpenWinInfoClick(Sender: TObject);
+    procedure RunOnceModule(H: HWND; P: PWideChar);
+    procedure RunWindowOnce(A: string; B: string);
+    procedure newTestClick(Sender: TObject);
+    procedure FormShow(Sender: TObject);
+    procedure ListView1SelectItem(Sender: TObject; Item: TListItem;
+      Selected: Boolean);
+    procedure OpenInEditorClick(Sender: TObject);
+    procedure RunTestClick(Sender: TObject);
+    procedure EditTestClick(Sender: TObject);
+    procedure DeleteTestClick(Sender: TObject);
+    procedure ListView1ColumnClick(Sender: TObject; Column: TListColumn);
+    procedure ListView1Compare(Sender: TObject; Item1, Item2: TListItem;
+      Data: Integer; var Compare: Integer);
+    procedure UpdateColumnSortIcon;
+  private
+    FSortColumn: Integer;
+    FSortAscending: Boolean;
+  public
+    { Public declarations }
+  end;
+
+var
+  MainScreen: TMainScreen;
+
+implementation
+
+{$R *.dfm}
+
+procedure LoadTestsINI(const FileName: string; ListView: TListView);
+var
+  Ini: TIniFile;
+  Sections: TStringList;
+  i: Integer;
+  Item: TListItem;
+begin
+  if not FileExists(FileName) then Exit;
+  ListView.Items.Clear;
+  Ini := TIniFile.Create(FileName);
+  Sections := TStringList.Create;
+  try
+    Ini.ReadSections(Sections);
+    for i := 0 to Sections.Count - 1 do
+      begin
+        Item := ListView.Items.Add;
+        Item.Caption := Ini.ReadString(Sections[i], 'Name', '');
+        Item.SubItems.Add(Ini.ReadString(Sections[i], 'Path', ''));
+        Item.SubItems.Add(Ini.ReadString(Sections[i], 'Type', ''));
+      end;
+  finally
+    Ini.Free;
+    Sections.Free;
+  end;
+end;
+
+procedure SaveTestsINI(const FileName: string; ListView: TListView);
+var
+  Ini: TIniFile;
+  i: Integer;
+  Section: string;
+begin
+  if not Assigned(ListView) then Exit;
+  Ini := TIniFile.Create(FileName);
+  try
+    var Sections := TStringList.Create;
+    try
+      Ini.ReadSections(Sections);
+      for i := 0 to Sections.Count - 1 do
+        Ini.EraseSection(Sections[i]);
+    finally
+      Sections.Free;
+    end;
+
+    for i := 0 to ListView.Items.Count - 1 do
+    begin
+      Section := 'Test' + IntToStr(i + 1);
+
+      Ini.WriteString(Section, 'Name', ListView.Items[i].Caption);
+      Ini.WriteString(Section, 'Path', ListView.Items[i].SubItems[0]);
+      Ini.WriteString(Section, 'Type', ListView.Items[i].SubItems[1]);
+    end;
+  finally
+    Ini.Free;
+  end;
+end;
+
+procedure TMainScreen.DeleteTestClick(Sender: TObject);
+var
+  Item: TListItem;
+begin
+  if Assigned(ListView1.Selected) then
+  begin
+    if MessageDlg('Are you sure to delete chosen test?', mtConfirmation,
+      [mbYes, mbNo], 0) = mrYes then
+    begin
+      ListView1.Selected.Delete;
+      SaveTestsINI('C:\Delphi\Projects\tests.ini', ListView1);
+    end;
+  end;
+end;
+
+procedure TMainScreen.EditTestClick(Sender: TObject);
+var
+  W: TNewTest;
+  Item: TListItem;
+begin
+  if not Assigned(ListView1.Selected) then Exit;
+
+  Item := ListView1.Selected;
+  W := TNewTest.Create(Self);
+  try
+    W.Edit1.Text := Item.Caption;
+    W.Edit2.Text := Item.SubItems[0];
+
+    if W.ShowModal = mrOk then
+      begin
+        Item.Caption := W.Edit1.Text;
+        Item.SubItems[0] := W.Edit2.Text;
+        Item.SubItems[1] := W.TestType.Text;
+        SaveTestsINI('C:\Delphi\Projects\tests.ini', ListView1);
+      end;
+  finally
+    W.Free;
+  end;
+end;
+
+procedure TMainScreen.FormShow(Sender: TObject);
+begin
+  LoadTestsINI('C:\Delphi\Projects\tests.ini', ListView1);
+end;
+
+procedure TMainScreen.ListView1ColumnClick(Sender: TObject;
+  Column: TListColumn);
+begin
+  if FSortColumn = Column.Index then
+    FSortAscending := not FSortAscending
+  else
+  begin
+    FSortColumn := Column.Index;
+    FSortAscending := True;
+  end;
+
+  (Sender as TListView).AlphaSort;
+  UpdateColumnSortIcon;
+end;
+
+procedure TMainScreen.ListView1Compare(Sender: TObject; Item1, Item2: TListItem;
+  Data: Integer; var Compare: Integer);
+var
+  S1, S2: string;
+begin
+  case FSortColumn of
+    0: begin
+        S1 := Item1.Caption;
+        S2 := Item2.Caption;
+       end;
+  else
+    begin
+      if (FSortColumn - 1 < Item1.SubItems.Count) then
+        S1 := Item1.SubItems[FSortColumn - 1]
+      else
+        S1 := '';
+
+      if (FSortColumn - 1 < Item2.SubItems.Count) then
+        S2 := Item2.SubItems[FSortColumn - 1]
+      else
+        S2 := '';
+    end;
+  end;
+  Compare := AnsiCompareText(S1, S2);
+  if not FSortAscending then
+    Compare := -Compare;
+end;
+
+procedure TMainScreen.ListView1SelectItem(Sender: TObject; Item: TListItem;
+  Selected: Boolean);
+var
+  HasSelection: Boolean;
+begin
+  HasSelection := ListView1.Selected <> nil;
+
+  RunTest.Enabled := HasSelection;
+  EditTest.Enabled := HasSelection;
+  DeleteTest.Enabled := HasSelection;
+  OpenInEditor.Enabled := HasSelection;
+end;
+
+procedure TMainScreen.newTestClick(Sender: TObject);
+var
+  W: TNewTest; Item: TListItem;
+
+begin
+  W := TNewTest.Create(Self);
+  try
+    if W.ShowModal = mrOk then
+    begin
+      Item := ListView1.Items.Add;
+      Item.Caption := W.Edit1.Text;
+      Item.SubItems.Add(W.Edit2.Text);
+      Item.SubItems.Add(W.TestType.Text);
+      SaveTestsINI('C:\Delphi\Projects\tests.ini', ListView1);
+    end;
+  finally
+    W.Free;
+  end;
+end;
+
+procedure TMainScreen.OpenInEditorClick(Sender: TObject);
+var
+  H: HWND; Path: string; FileName: string;
+begin
+  Path := ListView1.Selected.SubItems[0];
+  FileName := ExtractFileName(Path);
+  H := FindWindow(nil, Pchar(FileName + ' - SciTE-Lite'));
+  if FileExists(Path) then
+    RunOnceModule(H, PWideChar(Path))
+  else
+    ShowMessage('File not exist: ' + Path);
+end;
+
+procedure TMainScreen.RunOnceModule(H: HWND; P: PWideChar);
+begin
+  if H <> 0 then
+    SetForegroundWindow(H)
+  else
+    ShellExecute(0, 'open', P, nil, nil, SW_SHOWNORMAL);
+end;
+
+procedure TMainScreen.RunTestClick(Sender: TObject);
+var
+  Path: string; RunScriptPath: string;
+begin
+  Path := ListView1.Selected.SubItems[0];
+  RunScriptPath := 'C:\AutoIt3\AutoIt3_x64.exe';
+  ShellExecute(0, 'open', PWideChar(RunScriptPath), PWideChar(Path), nil, SW_SHOWNORMAL);
+end;
+
+procedure TMainScreen.RunWindowOnce(A: string; B: string);
+var
+  H: HWND; Name: PWideChar; Path: PWideChar;
+begin
+  Name := PWideChar(A);
+  Path := PWideChar(B);
+  H := FindWindow(nil, Name);
+  RunOnceModule(H, Path);
+end;
+
+procedure TMainScreen.OpenSciTEClick(Sender: TObject);
+begin
+	RunWindowOnce('(Untitled) - SciTE-Lite', 'C:\AutoIt3\SciTE\SciTE.exe');
+end;
+
+procedure TMainScreen.OpenWinInfoClick(Sender: TObject);
+begin
+  RunWindowOnce('AutoIt v3 Window Info - v3.3.16.1', 'C:\AutoIt3\Au3Info_x64.exe');
+end;
+
+procedure TMainScreen.UpdateColumnSortIcon;
+var
+  Header: HWND;
+  HDItem: THDItem;
+begin
+  Header := ListView_GetHeader(ListView1.Handle);
+
+  FillChar(HDItem, SizeOf(HDItem), 0);
+  HDItem.Mask := HDI_FORMAT;
+
+  var i: Integer;
+  for i := 0 to ListView1.Columns.Count - 1 do
+  begin
+    Header_GetItem(Header, i, HDItem);
+    HDItem.fmt := HDItem.fmt and not (HDF_SORTUP or HDF_SORTDOWN);
+    Header_SetItem(Header, i, HDItem);
+  end;
+
+  Header_GetItem(Header, FSortColumn, HDItem);
+  if FSortAscending then
+    HDItem.fmt := HDItem.fmt or HDF_SORTUP
+  else
+    HDItem.fmt := HDItem.fmt or HDF_SORTDOWN;
+  Header_SetItem(Header, FSortColumn, HDItem);
+end;
+
+end.

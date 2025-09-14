@@ -1,0 +1,14 @@
+program TestingAppProject;
+
+uses
+  Vcl.Forms,
+  TestingApp in 'TestingApp.pas' {MainScreen};
+
+{$R *.res}
+
+begin
+  Application.Initialize;
+  Application.MainFormOnTaskbar := True;
+  Application.CreateForm(TMainScreen, MainScreen);
+  Application.Run;
+end.
